@@ -1,0 +1,144 @@
+---
+title: "STA S380 Part 2"
+author: "Anqi Lou (al44684)"
+date: "08/02/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+# Visual story telling part 1: green buildings
+
+```{r p1_1, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+library(ggplot2)
+library(corrplot)
+library(ggcorrplot)
+library(GGally)
+
+green_bldg <- read.csv("greenbuildings.csv")
+
+# delete rows with lower than 10% occupation rate
+green_bldg <- green_bldg[green_bldg$leasing_rate > 10, ]
+
+# create a box plot to show the distribution of rent for green buildings and non-green buildings
+plt <- ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = Rent, group = green_rating)) +
+  labs(title = "Rent by Green Rating of a Building")
+plt
+ggplot_build(plt)$data
+```
+
+Based on the box plot as well as the quantile values for the rent of green buildings and non-green buildings respectively, it is true that the rent for green buildings is generally higher than that of non-green buildings. However, we cannot say for sure that such a difference in rent is caused by the environmental friendliness of the building. To check whether there are confounding variables, we first create a correlation matrix to find out the top variables that are closely correlated with rent.
+
+```{r p1_2, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+# create a correlation matrix
+corr <- round(cor(na.omit(green_bldg)), 1)
+ggcorr(green_bldg, layout.exp = 3)
+```
+
+From the graph, we can tell that other than the green rating of a building, the size, leasing rate, stories, quality (whether it is classified as class a), electricity cost, and cluster rent of the building all show a greater positive relationship with the rent for that building. While it is obvious how the average rent in the buildings local market can have an influence on the rent, we need to study further into the rest of the variables to find out whether they also have some correlations with the green rating of a building. If so, it could confound the relationship that the stats guru points out and would make it arbitrary to say that green buildings generally have a higher rent.
+
+In order to do so, we can plot some pairwise graphs of the above variables with the green rating of a building.
+
+```{r p1_3, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = size, group = green_rating)) +
+  labs(title = "Size (in ft^2) by Green Rating")
+```
+As we can see from the box plot, the green buildings generally have more available rental space than non-green ones. Therefore, it can be an implication that size is a confounding variable. It could be possible that the increase in rent for green house is not due to the fact that the building is environmentally conscious, but because of the coincident that these buildings happen to be larger and have more rental space.
+
+For rest oF the variable, the box plot/bar chart by the green rating of a building is as below:
+
+```{r p1_4, echo = FALSE, message = FALSE, fig.show="hold", out.width="40%", fig.align='center'}
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = leasing_rate, group = green_rating)) +
+  labs(title = "Leasing Rate by Green Rating")
+
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = stories, group = green_rating)) +
+  labs(title = "Stories by Green Rating")
+
+green_bldg$class <- ifelse(green_bldg$class_a == 1, "a", "not a")
+ggplot(data = green_bldg) + 
+  geom_bar(mapping = aes(factor(green_rating), fill = class), stat = "count") +
+  labs(title = "Num of Class A by Green Rating")
+
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = Electricity_Costs, group = green_rating)) +
+  labs(title = "Electricity Costs by Green Rating")
+
+```
+
+Similar to the variable size, all the other four variables—— leasing rate (occupancy rate), stories, whether it is classified as class a, and electricity cost, all show some particular patterns with the green rating of a building. To be more specific, a green building is more likely to have a higher leasing rate, greater number of stories, better quality, and greater electricity cost. Therefore, these could all be confounding variables; it might not be green buildings that are having a higher rent, it might in fact, be those buildings that are having a higher occupancy rate, more stories, better qualities, and higher electricity rate that are having a higher rent. Therefore, in order to adjust for the impact of these potential confounding variables, we can re-sample from our data: to choose a subset of green and non-green buildings that have similar distributions in size, leasing rate, stories, class_a, and electricity costs to find out whether a green house would truly affect a building's rent.
+
+```{r p1_5, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+
+```
+
+\newpage
+# Visual story telling part 2: flights at ABIA
+
+```{r p2_1, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+ABIA <- read.csv("ABIA.csv")
+airport <- read.csv("airports_dat.csv", header = FALSE,
+                    col.names = c("Airport_ID", "Name", "City", "Country", "IATA", "ICAO", "Latitude", 
+                                  "Longtitude", "Altitude", "Time_Zone", "DST", "Tz_time", "Type", "Source"))
+airport_sub <- airport[c("IATA", "Latitude", "Longtitude", "City")]
+
+# merge the location information based on airport code
+ABIA <- merge(ABIA, airport_sub, sort = FALSE,
+              all.x = TRUE, by.x = "Origin", by.y = "IATA")
+names(ABIA)[names(ABIA) == "Latitude"] <- "Latitude_orig"
+names(ABIA)[names(ABIA) == "Longtitude"] <- "Longtitude_orig"
+names(ABIA)[names(ABIA) == "City"] <- "City_orig"
+
+ABIA <- merge(ABIA, airport_sub, sort = FALSE,
+              all.x = TRUE, by.x = "Dest", by.y = "IATA")
+names(ABIA)[names(ABIA) == "Latitude"] <- "Latitude_dest"
+names(ABIA)[names(ABIA) == "Longtitude"] <- "Longtitude_dest"
+names(ABIA)[names(ABIA) == "City"] <- "City_dest"
+```
+
+
+```{r p2_2, echo = FALSE, message = FALSE, fig.align='center'}
+# create a new matrix that counts the number of departures and arrivals
+uniq_airport <- unique(ABIA[c("Latitude_orig", "Longtitude_orig")])
+names(uniq_airport)[names(uniq_airport) == "Latitude_orig"] <- "Latitude"
+names(uniq_airport)[names(uniq_airport) == "Longtitude_orig"] <- "Longtitude"
+for (i in c(1:53)){
+  uniq_airport$num_dest[i] <- sum(ABIA$Latitude_dest == uniq_airport$Latitude[i])
+  uniq_airport$num_orig[i] <- sum(ABIA$Latitude_orig == uniq_airport$Latitude[i])
+}
+
+# mapping the destination airports
+library("sf")
+library(dplyr)
+library(maps)
+require(viridis)
+theme_set(
+  theme_void()
+  )
+
+usa_map <- map_data("state")
+ggplot(usa_map, aes(x = long, y = lat, group = group)) +
+  geom_polygon(data = usa_map, fill = "lightgrey", colour = "white") +
+  geom_point(data = uniq_airport[-53,], aes(x = Longtitude, y = Latitude, size = num_dest, group = Longtitude)) +
+  labs(title = "Destinations for flights that departed from AUS") +
+  guides(size = guide_legend(title="num flights"))
+```
+
+
+```{r p2_3, echo = FALSE, message = FALSE, fig.align='center'}
+# mapping the departure airports
+ggplot(usa_map, aes(x = long, y = lat, group = group)) +
+  geom_polygon(data = usa_map, fill = "lightgrey", colour = "white") +
+  geom_point(data = uniq_airport[-53,], aes(x = Longtitude, y = Latitude, size = num_orig, group = Longtitude)) +
+  labs(title = "Destinations for flights that departed from AUS") +
+  guides(size = guide_legend(title="num flights"))
+```
+
+
+
