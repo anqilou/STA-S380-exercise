@@ -1,0 +1,779 @@
+---
+title: "STA S380 Part 2"
+author: "Anqi Lou (al44684)"
+date: "08/17/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+# Visual story telling part 1: green buildings
+
+```{r p1_1, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+library(ggplot2)
+library(corrplot)
+library(ggcorrplot)
+library(GGally)
+library(mosaic)
+
+green_bldg <- read.csv("greenbuildings.csv")
+
+# delete rows with lower than 10% occupation rate
+green_bldg <- green_bldg[green_bldg$leasing_rate > 10, ]
+
+# create a box plot to show the distribution of rent for green buildings and non-green buildings
+plt <- ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = Rent, group = green_rating)) +
+  labs(title = "Rent by Green Rating of a Building")
+plt
+ggplot_build(plt)$data
+```
+
+Based on the box plot as well as the quantile values for the rent of green buildings and non-green buildings respectively, it is true that the rent for green buildings is generally higher than that of non-green buildings. However, we cannot say for sure that such a difference in rent is caused by the environmental friendliness of the building. To check whether there are confounding variables, we first create a correlation matrix to find out the top variables that are closely correlated with rent.
+
+```{r p1_2, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+# create a correlation matrix
+corr <- round(cor(na.omit(green_bldg)), 1)
+ggcorr(green_bldg, layout.exp = 3)
+```
+
+From the graph, we can tell that other than the green rating of a building, the size, leasing rate, stories, quality (whether it is classified as class a), electricity cost, and cluster rent of the building all show a greater positive relationship with the rent for that building. While it is obvious how the average rent in the buildings local market can have an influence on the rent, we need to study further into the rest of the variables to find out whether they also have some correlations with the green rating of a building. If so, it could confound the relationship that the stats guru points out and would make it arbitrary to say that green buildings generally have a higher rent.
+
+In order to do so, we can plot some pairwise graphs of the above variables with the green rating of a building.
+
+```{r p1_3, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = size, group = green_rating)) +
+  labs(title = "Size (in ft^2) by Green Rating")
+```
+As we can see from the box plot, the green buildings generally have more available rental space than non-green ones. Therefore, it can be an implication that size is a confounding variable. It could be possible that the increase in rent for green house is not due to the fact that the building is environmentally conscious, but because of the coincident that these buildings happen to be larger and have more rental space.
+
+For rest of the variable, the box plot/bar chart by the green rating of a building is as below:
+
+```{r p1_4, echo = FALSE, message = FALSE, fig.show="hold", out.width="40%", fig.align='center'}
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = leasing_rate, group = green_rating)) +
+  labs(title = "Leasing Rate by Green Rating")
+
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = stories, group = green_rating)) +
+  labs(title = "Stories by Green Rating")
+
+green_bldg$class <- ifelse(green_bldg$class_a == 1, "a", "not a")
+ggplot(data = green_bldg) + 
+  geom_bar(mapping = aes(factor(green_rating), fill = class), stat = "count") +
+  labs(title = "Num of Class A by Green Rating")
+
+ggplot(data = green_bldg) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = Electricity_Costs, group = green_rating)) +
+  labs(title = "Electricity Costs by Green Rating")
+
+```
+
+Similar to size, all the other four variables—— leasing rate (occupancy rate), stories, whether it is classified as class a, and electricity cost, all show some particular patterns with the green rating of a building. To be more specific, a green building is more likely to have a higher leasing rate, greater number of stories, better quality, and greater electricity cost. Therefore, these could all be confounding variables; it might not be green buildings that are having a higher rent, it might in fact, be those buildings that are having a higher occupancy rate, more stories, better qualities, and higher electricity rate that are having a higher rent. Therefore, in order to adjust for the impact of these potential confounding variables, we can divide our current data set into two, one being all green buildings, and the other being non-green buildings. Then we apply bootstrap to re-sample on the two data set separately 2500 times to get a better estimate of the population median of the two groups. In that way, we are less likely to be impacted by those confounding variables.
+
+```{r p1_5, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+green <- green_bldg[which(green_bldg$green_rating == 1), ]
+non_green <- green_bldg[which(green_bldg$green_rating == 0), ]
+
+green_boot = do(2500)*{
+	median(resample(green)$Rent)
+}
+green_boot$green_rating <- 1
+
+non_green_boot = do(2500)*{
+	median(resample(non_green)$Rent)
+}
+non_green_boot$green_rating <- 0
+boot <- rbind(green_boot, non_green_boot)
+
+boot_plt <- ggplot(data = boot) + 
+  geom_boxplot(mapping = aes(x = green_rating, y = result, group = green_rating)) +
+  labs(y = "Rent", title = "Rent by Green Rating of a Building")
+boot_plt
+ggplot_build(boot_plt)$data
+```
+As it turns out, the median rent of a green building estimated using bootstrap is \$27.6, while the median rent of a non_building is \$25.03. This result is very similar to the one from the stats guru. Therefore, even thought there might be impact from confounding variables, we can say with more confident that the rent of a green building would be higher than that of a non-green one, and that it is "a good financial move to build the green building."
+
+
+\newpage
+# Visual story telling part 2: flights at ABIA
+
+```{r p2_1, echo = FALSE, message = FALSE, fig.align='center', fig.height = 3, fig.width = 4}
+ABIA <- read.csv("ABIA.csv")
+airport <- read.csv("airports_dat.csv", header = FALSE,
+                    col.names = c("Airport_ID", "Name", "City", "Country", "IATA", "ICAO", "Latitude", 
+                                  "Longitude", "Altitude", "Time_Zone", "DST", "Tz_time", "Type", "Source"))
+airport_sub <- airport[c("IATA", "Latitude", "Longitude")]
+
+# merge the location information based on airport code
+ABIA <- merge(ABIA, airport_sub, sort = FALSE,
+              all.x = TRUE, by.x = "Origin", by.y = "IATA")
+names(ABIA)[names(ABIA) == "Latitude"] <- "Latitude_orig"
+names(ABIA)[names(ABIA) == "Longitude"] <- "Longitude_orig"
+
+ABIA <- merge(ABIA, airport_sub, sort = FALSE,
+              all.x = TRUE, by.x = "Dest", by.y = "IATA")
+names(ABIA)[names(ABIA) == "Latitude"] <- "Latitude_dest"
+names(ABIA)[names(ABIA) == "Longitude"] <- "Longitude_dest"
+```
+
+
+```{r p2_2, echo = FALSE, message = FALSE, fig.show = "hold", out.width = "40%", fig.align = 'center'}
+# create a new matrix that counts the number of departures and arrivals
+uniq_airport <- unique(ABIA[c("Latitude_orig", "Longitude_orig")])
+names(uniq_airport)[names(uniq_airport) == "Latitude_orig"] <- "Latitude"
+names(uniq_airport)[names(uniq_airport) == "Longitude_orig"] <- "Longitude"
+for (i in c(1:53)){
+  uniq_airport$airport[i] <- airport$IATA[airport$Latitude == uniq_airport$Latitude[i]]
+  uniq_airport$city[i] <- airport$City[airport$Latitude == uniq_airport$Latitude[i]]
+  uniq_airport$num_dest[i] <- sum(ABIA$Latitude_dest == uniq_airport$Latitude[i])
+  uniq_airport$num_orig[i] <- sum(ABIA$Latitude_orig == uniq_airport$Latitude[i])
+}
+
+# mapping the destination airports
+library("sf")
+library(dplyr)
+library(maps)
+require(viridis)
+
+usa_map <- map_data("state")
+ggplot(usa_map, aes(x = long, y = lat, group = group)) +
+  geom_polygon(data = usa_map, fill = "lightgrey", colour = "white") +
+  geom_point(data = uniq_airport[-53,], aes(x = Longitude, y = Latitude, size = num_dest, group = Longitude)) +
+  labs(title = "Number of flights coming from AUS in 2008") +
+  guides(size = guide_legend(title="num flights")) +
+  theme_void()
+
+# mapping the departure airports
+ggplot(usa_map, aes(x = long, y = lat, group = group)) +
+  geom_polygon(data = usa_map, fill = "lightgrey", colour = "white") +
+  geom_point(data = uniq_airport[-53,], aes(x = Longitude, y = Latitude, size = num_orig, group = Longitude)) +
+  labs(title = "Number of flights coming to AUS in 2008") +
+  guides(size = guide_legend(title="num flights")) +
+  theme_void()
+```
+
+As it can be seen from the above two maps, the number of planes flying to Austin from airports over the nation is roughly the same as the number of planes flying out of Austin to each airport. This is not hard to explain, as planes usually fly in round trips, back and forth between two cities.
+
+Now, let's focus on the flights/airports that are in Texas only.
+
+```{r p2_3, echo = FALSE, message = FALSE, fig.height = 2.5, fig.width = 3.5, fig.align = 'center'}
+library(ggrepel)
+tx <- c("IAH", "DFW", "DAL", "LBB", "ELP", "HOU", "HRL", "MAF", "SAT", "AUS")
+uniq_airport_TX <- uniq_airport[uniq_airport$airport %in% tx,]
+
+counties <- map_data("county")
+tx_county <- subset(counties, region == "texas")
+
+# mapping the departure airports in Texas
+ggplot(tx_county, aes(x = long, y = lat, group = subregion)) +
+  geom_polygon(fill = "lightgrey", colour = "white") +
+  geom_point(data = uniq_airport_TX[-10,],
+             aes(x = Longitude, y = Latitude, size = num_orig, group = Longitude)) +
+  geom_text_repel(data = uniq_airport_TX[-10,],  size = 3.5, hjust = 0, vjust = -1,
+                  aes(x = Longitude, y = Latitude, group = Longitude, label = airport)) +
+  labs(title = "Number of flights coming from AUS IN 2008") +
+  guides(size = guide_legend(title="num flights")) +
+  theme_void()
+
+```
+
+To see how many of them are delayed:
+(Classify a plane as delayed if ArrDelay is greater than 20min)
+```{r p2_4, echo = FALSE, message = FALSE, fig.align = 'center', fig.height = 2.5, , fig.width = 4.5}
+ABIA_TX <- ABIA[(ABIA$Dest %in% tx) & (ABIA$Origin == "AUS"),]
+ABIA_TX$delayed <- ifelse(ABIA_TX$ArrDelay < 20, "Ontime", "Delayed")
+ABIA_TX <- ABIA_TX[!is.na(ABIA_TX$delayed),]
+
+# graphic
+ggplot(data = ABIA_TX) +
+  geom_bar(mapping = aes(factor(Dest), fill = delayed), stat = "count") + 
+  labs(title="Number of flights coming from AUS in 2008", y = "Num flights", x = "Airport")
+```
+
+Focus on those flights that are delayed and see the reasons for the delay:
+(if more than two types of delay occurred, categorize it as the type that has the longest delay in time)
+```{r p2_5, echo = FALSE, message = FALSE, fig.align = 'center', fig.height = 2.5, , fig.width = 4.5}
+# create dummy variables for the delay reasons
+ABIA_TX$CarrierDly <- ifelse((ABIA_TX$delayed == "Delayed") & (ABIA_TX$CarrierDelay > 0), "Yes", "No")
+ABIA_TX$WeatherDly <- ifelse((ABIA_TX$delayed == "Delayed") & (ABIA_TX$WeatherDelay > 0), "Yes", "No")
+ABIA_TX$NASDly <- ifelse((ABIA_TX$delayed == "Delayed") & (ABIA_TX$NASDelay > 0), "Yes", "No")
+ABIA_TX$SecurityDly <- ifelse((ABIA_TX$delayed == "Delayed") & (ABIA_TX$SecurityDelay > 0), "Yes", "No")
+ABIA_TX$LateAircraftDly <- ifelse((ABIA_TX$delayed == "Delayed") & (ABIA_TX$LateAircraftDelay > 0), "Yes", "No")
+
+ABIA_TX$DelayType <- 0
+
+for (i in c(1:dim(ABIA_TX)[1])){
+  max_delay = which.max(ABIA_TX[i, c("CarrierDelay", "WeatherDelay",
+                                     "NASDelay", "SecurityDelay", "LateAircraftDelay")])
+  ABIA_TX$DelayType[i] <- ifelse(is.null(names(max_delay)), "On time", names(max_delay))
+}  
+
+# graphic
+ggplot(data = ABIA_TX[ABIA_TX$delayed == "Delayed",]) +
+  geom_bar(mapping = aes(factor(Dest), fill = DelayType), stat = "count") + 
+  labs(title="Delay Reasons for flights coming from AUS", y = "Num flights", x = "Airport")
+```
+```{r p2_6, echo = FALSE, message = FALSE, fig.align='center', fig.height = 2.5, , fig.width = 4.5}
+# graphic
+ggplot(data = ABIA_TX[ABIA_TX$delayed == "Delayed",]) +
+  geom_point(mapping = aes(x = Dest, y = ArrDelay, color = DelayType)) + 
+  labs(title="Delay Times for flights coming from AUS", y = "Delay time", x = "Airport")
+```
+
+\newpage
+# Portfolio modeling
+
+We built three portfolios of ETFs. Each portfolios would consist of 5 equally-weighted different ETFs. The first would focus on commodity ETFs; the second would be on bonds, which can be considered as a relatively safe one; the third would focus on small & mid cap equities and can be considered as a riskier one.
+
+Portfolio 1: CORN, WEAT, BNO, GSC, USCI
+\newline
+Portfolio 2: VCLT, QLTA, GOVT, TLH, SPIB
+\newline
+Portfolio 3: SCHC, VBR, DES, EEMS, PRFZ
+
+```{r p3_1, echo = FALSE, message = FALSE, warning = FALSE}
+library(mosaic)
+library(quantmod)
+library(foreach)
+
+# build three different portfolios
+port_1 <- c("CORN", "WEAT", "BNO", "GSC", "USCI")
+port_2 <- c("VCLT", "QLTA", "GOVT", "TLH", "SPIB")
+port_3 <- c("SCHC", "VBR", "DES", "EEMS", "PRFZ")
+
+# get prices for the past five years
+prices_1 = getSymbols(port_1, from = "2015-01-01")
+prices_2 = getSymbols(port_2, from = "2015-01-01")
+prices_3 = getSymbols(port_3, from = "2015-01-01")
+
+for(ticker in port_1) {
+	expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+	eval(parse(text=expr))
+}
+
+for(ticker in port_2) {
+	expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+	eval(parse(text=expr))
+}
+
+for(ticker in port_3) {
+	expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+	eval(parse(text=expr))
+}
+
+# Combine all the returns in a matrix
+returns_1 = cbind(ClCl(CORNa), ClCl(WEATa), ClCl(BNOa), ClCl(GSCa), ClCl(USCIa))
+returns_1 = as.matrix(na.omit(returns_1))
+
+returns_2 = cbind(ClCl(VCLTa), ClCl(QLTAa), ClCl(GOVTa), ClCl(TLHa), ClCl(SPIBa))
+returns_2 = as.matrix(na.omit(returns_2))
+
+returns_3 = cbind(ClCl(SCHCa), ClCl(VBRa), ClCl(DESa), ClCl(EEMSa), ClCl(PRFZa))
+returns_3 = as.matrix(na.omit(returns_3))
+
+total_wealth = 10000
+weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+
+```
+
+Use bootstrap to simulate the performance for 20 trading days:
+
+**Portfolio 1**
+```{r p3_2, echo = FALSE, message = FALSE, fig.align = 'center', fig.height = 3, fig.width = 4.5}
+set.seed(2222)
+initial_wealth = 100000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns_1, 1, orig.ids = FALSE)
+		holdings = holdings + holdings * return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+	}
+	wealthtracker
+}
+
+hist(sim1[,n_days], 25, xlab = "Final wealth", main = "Final wealth of portfolio 1")
+```
+The value at risk at the 5% level is:
+```{r p3_3, echo = FALSE, message = FALSE}
+quantile(sim1[,n_days]- initial_wealth, prob = 0.05)
+```
+
+
+\newpage
+
+**Portfolio 2**
+```{r p3_4, echo = FALSE, message = FALSE, fig.align = 'center', fig.height = 3, , fig.width = 4.5}
+set.seed(2222)
+initial_wealth = 100000
+sim2 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns_2, 1, orig.ids = FALSE)
+		holdings = holdings + holdings * return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+	}
+	wealthtracker
+}
+
+hist(sim2[,n_days], 25, xlab = "Final wealth", main = "Final wealth of portfolio 2")
+```
+The value at risk at the 5% level is:
+```{r p3_5, echo = FALSE, message = FALSE}
+quantile(sim2[,n_days]- initial_wealth, prob = 0.05)
+```
+
+**Portfolio 3**
+```{r p3_6, echo = FALSE, message = FALSE, fig.align = 'center', fig.height = 3, , fig.width = 4.5}
+set.seed(2222)
+initial_wealth = 100000
+sim3 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns_3, 1, orig.ids = FALSE)
+		holdings = holdings + holdings * return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+	}
+	wealthtracker
+}
+
+hist(sim3[,n_days], 25, xlab = "Final wealth", main = "Final wealth of portfolio 3")
+```
+The value at risk at the 5% level is:
+```{r p3_7, echo = FALSE, message = FALSE}
+quantile(sim3[,n_days]- initial_wealth, prob = 0.05)
+```
+
+In terms of riskiness and volatility, portfolio 3 is the most aggressive one among the three, as it focuses on small to median cap securities. This characteristic can also be seen from the VaR AT 5%. Portfolio 3 has a VaR of 9602.088, which is the highest among the three. Even though portfolio 1 has a VaR that is very close to that of portfolio 3, if we take a look at the bar charts, the distribution of the final wealth of portfolio 3 is way more spread out than that of portfolio 1, which implies that portfolio 3 is a more risky one. On the other hand, portfolio 2 is the safest one. Not only is its VaR much smaller than that of the other two portfolios, its simulated final return is also more clustered around $100,000.
+
+\newpage
+
+# Market segmentation
+
+First, we need to clean the data and do some pre-processing. 
+
+For data cleaning, we removed all the rows with missing entries. And for data pre-processing, there are mainly three things to do. One, remove the row if "spam" and "adult" tweets take up more than one third of the total tweets that the user has posted. Since these posts are indeed about inappropriate contents, posting too many of such tweets might imply the illegitimacy of the user. Thus, they definitely would not be the potential consumer for NutrientH20, and we should exclude them in the analysis. The second pre-processing job to be done involves removing the row if the user has posted less than five tweets. Posting too little contents means that the user is not very active online, which gives us little information to learn about their interests. Therefore, we would also like to keep them out of our study so that they are less likely to skew the result. (Actually, it turned out that almost all users have posted more than 5 tweets.) And lastly, we want to normalize tweet counts to tweet frequencies.
+
+```{r p4_1, echo = FALSE, message = FALSE}
+tweet <- read.csv("social_marketing.csv")
+tweet <- na.omit(tweet)
+tweet$sum <- rowSums(tweet[, -1])
+tweet <- tweet[(tweet$spam + tweet$adult)*3 < tweet$sum, ]
+tweet <- tweet[tweet$sum >= 5, ]
+tweet <- tweet[, -ncol(tweet)]
+tweet[, -1] <- tweet[, -1]/rowSums(tweet[, -1])
+```
+
+After cleaning the data, in order to learn about the market segmentation, we can use k-means++ on the cleaned data set to cluster the users and find their correlated interest. However, since there are too many variables, we first apply PCA to reduce the dimension.
+
+Below is a PCA summary that could help us decide the number of variables to reduce to:
+
+```{r p4_2, echo = FALSE, message = FALSE}
+PCApilot = prcomp(tweet[, -1], scale = TRUE)
+summary(PCApilot)
+```
+Based on the summary of importance of components, we can see that reducing the number of variables to a very small number might drastically sacrifice the variance among the observations. Therefore, we choose to reduce the dimension to 10 so that at least half of original variance can be maintained but also at the same time achieves the purpose of simplifying the data set.
+
+Next, we apply K-means++ to cluster the observations into 5 groups to learn about the market segment. Below is the landings for the center of the five clusters on the ten principal components:
+```{r p4_3, echo = FALSE, message = FALSE}
+set.seed(1111)
+tweet_pc10 = prcomp(tweet[, -1], scale = TRUE, rank = 10)
+tweet_loadings = tweet_pc10$rotation
+tweet_scores = tweet_pc10$x
+
+library(ggplot2)
+library(LICORS)
+library(foreach)
+library(mosaic)
+
+cluster = kmeanspp(tweet_scores[, -1], k = 5, nstart = 25)
+cluster_center <- as.data.frame(cluster$centers)
+cluster_center
+```
+
+By looking at the extreme values in each cluster, we can see that cluster 1 has higher scores for PC6 and PC9; cluster 2 has the highest score for PC2; cluster 3 is somewhat average on the other PCs, but has a very low value for PC3; cluster 4 is most characterized by PC4; and cluster 5 is most characterized by PC3, the opposite of cluster 3. In order to get a better understanding of those principal components, we can look at the top five variables that load most heavily on those PCs.
+
+Start from PC6 and PC9 for cluster 1:
+```{r p4_4, echo = FALSE, message = FALSE}
+library(tidyverse)
+library(dplyr)
+
+tweet_ld_summary = PCApilot$rotation %>%
+  as.data.frame() %>%
+  rownames_to_column("Tweet_category")
+
+pc6_loading <- tweet_ld_summary %>%
+  select(Tweet_category, PC6) %>%
+  arrange(desc(PC6))
+pc6_loading[1:5, ]
+
+pc9_loading <- tweet_ld_summary %>%
+  select(Tweet_category, PC9) %>%
+  arrange(desc(PC9))
+pc9_loading[1:5, ]
+```
+
+We can see that PC6 is more are the artistic side while PC9 is more about gossips and chores.
+
+Then, the top variables that load on PC2 which most characterizes cluster 2:
+```{r p4_5, echo = FALSE, message = FALSE}
+pc2_loading <- tweet_ld_summary %>%
+  select(Tweet_category, PC2) %>%
+  arrange(desc(PC2))
+pc2_loading[1:5, ]
+```
+Apparently, PC2 is all about health and personal fitness Thus, it is not hard to tell that cluster 2 is a group of users who care a lot about their body and the overall wellness. This would be a good potential market segment for NutrientH20. (Judging from the name, assume NutrientH20 is a company that sells health and nutrition related products, just like GNC.)
+
+Now, look at PC3 which cluster 5 has a very high value for, but cluster 3 has an extremely low value for:
+```{r p4_6, echo = FALSE, message = FALSE}
+pc3_loading <- tweet_ld_summary %>%
+  select(Tweet_category, PC3) %>%
+  arrange(desc(PC3))
+pc3_loading[1:5, ]
+```
+This principal component is all about the fashion/beauty area. Consequently, it implies that cluster 5 might consist of a group of young ladies who loves makeups and clothing, while cluster 3 is the exact opposite.
+
+Lastly, the top variable captured by PC4, characterizing cluster 4:
+```{r p4_7, echo = FALSE, message = FALSE}
+pc4_loading <- tweet_ld_summary %>%
+  select(Tweet_category, PC4) %>%
+  arrange(desc(PC4))
+pc4_loading[1:5, ]
+```
+As we can tell from above, PC4 is more about college lives. Thus, we may imagine that cluster 4 might be a group of college kids who are really into sports and computer games.
+
+In addition, we can also look at the number of people in each cluster to help us get a better idea of each market segment.
+
+```{r p4_8, echo = FALSE, message = FALSE, warning = FALSE, fig.align = 'center', fig.height = 2.8, fig.width = 4}
+qplot(cluster$cluster, stat = "count", xlab = "cluster", main = "Number of user in each cluster")
+```
+As we can tell from the above graph, while the second cluster might be those who are most likely to purchase from NutrientH20, they actually have the lowest number of users among all five clusters. On the other hand, more than half of all users fall into the first cluster, which talks more about movies, and music, and some random stuff. It implies that a lot of people following NutrientH20 online have no strong interest in company's product. The company should try to identify the users who fall into cluster 2, as they are more likely to be the potential customers.
+
+\newpage
+
+# Author attribution
+
+**Part One - Data Pre-processing**
+
+In order to create the data set we need for building and testing the model, we first read in all the files in the training folder and test folder. Each time we read in a folder for an author, we create a corpus for that author and apply a series of transformation to make the data more processable. This involves tokenizing the articles, making all the words lowercase, removing all numbers, punctuation, and white spaces, as well as removing stopwords from the "SMART" stopword list. In addition, words with more than 95% sparse entries all files from the same author will also be dropped. Too many parse entries mean that the word is only observed in very few files. Removing them can prevent us from learning from the "noise" in the long tail. After that, TF-IDF score will be calculated for all processed corpora. The scores for corpora from the training folder will be combined into a matrix and those from the test folder will be combined into another matrix.
+
+```{r p5_1, echo = FALSE, message = FALSE, warning = FALSE}
+library(tm) 
+library(tidyverse)
+library(slam)
+library(proxy)
+library(dplyr)
+
+readerPlain = function(fname){
+				readPlain(elem = list(content = readLines(fname)), 
+							id=fname, language = 'en') }
+
+# read in all files in all folders from training folder and testing folder
+train_authors = list.files(path = "C50train")
+train_set <- data.frame()
+for (i in c(1:50)){
+  author = train_authors[i]
+  file_train = Sys.glob(paste0("C50train/", author, "/*.txt"))
+  train_temp = lapply(file_train, readerPlain)
+  train_names = as.character(train_temp) %>%
+  	{ strsplit(., '/', fixed = TRUE) } %>%
+  	{ lapply(., tail, n = 2) } %>%
+  	{ lapply(., paste0, collapse = '') } %>%
+  	unlist
+  names(train_temp) = train_names
+  
+  # create a corpus for the current author and start pre-processing
+  train_temp <- Corpus(VectorSource(train_temp))
+  # change to all lowercase, remove numbers, punctuation, white spaces, and stopwords
+  train_temp = train_temp %>%
+    tm_map(content_transformer(tolower))  %>%
+    tm_map(content_transformer(removeNumbers)) %>%
+    tm_map(content_transformer(removePunctuation)) %>%
+    tm_map(content_transformer(stripWhitespace)) %>%
+    tm_map(content_transformer(removeWords), stopwords("SMART"))
+  # create a doc-term-matrix from the corpus and removes those terms that have count 0 in >95% of docs
+  DTM_train = DocumentTermMatrix(train_temp)
+  DTM_train = removeSparseTerms(DTM_train, 0.95)
+  
+  # calculate TF-IDF and change into matrix form
+  tfidf_train = weightTfIdf(DTM_train)
+  train = as.matrix(tfidf_train)
+  train_set <- bind_rows(train_set, as.data.frame(train)) 
+}
+
+test_authors = list.files(path = "C50test")
+test_set <- data.frame()
+for (i in c(1:length(test_authors))){
+  author = test_authors[i]
+  file_test = Sys.glob(paste0("C50test/", author, "/*.txt"))
+  test_temp = lapply(file_test, readerPlain)
+  test_names = as.character(test_temp) %>%
+  	{ strsplit(., '/', fixed=TRUE) } %>%
+  	{ lapply(., tail, n = 2) } %>%
+  	{ lapply(., paste0, collapse = '') } %>%
+  	unlist
+  names(test_temp) = test_names
+  
+  # create a corpus for the current author and start pre-processing
+  test_temp <- Corpus(VectorSource(test_temp))
+  # change to all lowercase, remove numbers, punctuation, white spaces, and stopwords
+  test_temp = test_temp %>%
+    tm_map(content_transformer(tolower))  %>%
+    tm_map(content_transformer(removeNumbers)) %>%
+    tm_map(content_transformer(removePunctuation)) %>%
+    tm_map(content_transformer(stripWhitespace)) %>%
+    tm_map(content_transformer(removeWords), stopwords("SMART"))
+  # create a doc-term-matrix from the corpus and removes those terms that have count 0 in >95% of docs
+  DTM_test = DocumentTermMatrix(test_temp)
+  DTM_test = removeSparseTerms(DTM_test, 0.95)
+  
+  # calculate TF-IDF and change into matrix form
+  tfidf_test = weightTfIdf(DTM_test)
+  test = as.matrix(tfidf_test)
+  test_set <- bind_rows(test_set, as.data.frame(test))  
+}
+
+```
+
+Next, we need to adjust for the words that appeared in the testing matrix but not in the training one. In order to do so, we first create a pseudo word "pseuddo" in the training set with values all being zeros. Then, we bind the rows of the training set with the testing set, and number of non-zero entries in the columns after "pseuddo", which are the columns for words that are never seen in the training set, will be counted and recorded as the new value for "pseuddo". In that way, the values for "pseuddo" for all the files from the testing set will be the number of words that did not appear in the training set, while the value for pseuddo" for all files from the training set will still be zeros. After that, columns after "pseuddo" will be dropped.
+
+```{r p5_2, echo = FALSE, message = FALSE, warning = FALSE}
+# create a pseudo word "pseudo" to store the sum of number of words that appeared in testing, but not in training
+train_set$pseuddo <- 0
+
+# combine train and test, and fill na with 0
+combined_set <- bind_rows(train_set, test_set)
+combined_set[is.na(combined_set)] <- 0
+
+# populate "pseuddo" with values being number of non-zero entries in all columns after "pseuddo"
+combined_set$pseuddo <- rowSums(combined_set[dim(train_set)[2]:dim(combined_set)[2]] > 0)
+
+# remove all columns after "pseuddo"
+combined_set <- combined_set[, 1:dim(train_set)[2]]
+
+```
+
+As for the final step for pre-processing the data, we need to populate the response variables, in other words, add a categorical variable "author" to indicate the author of the article. After splitting the data back into training and testing, we again process the two sets of data in groups of fifty. For instance, for the first fifty instances in the training data set, the value for "author" will be the name of the first folder in the training folder, and the second fifty instances will have the value corresponding to the name of the second folder in the training folder, so on and so forth.
+
+```{r p5_3, echo = FALSE, message = FALSE, warning = FALSE}
+# split back into train and test
+train <- combined_set[1:2500, ]
+test <- combined_set[2501:5000, ]
+
+rownames(train) <- NULL
+rownames(test) <- NULL
+
+# go over the two df's in groups of fifty, and add a column to show the author attribution
+train$authorAttr <- "a"
+test$authorAttr <- "b"
+
+for (i in c(0:49)){
+  train$authorAttr[(i*50+1):(i*50+50)] <- train_authors[i+1]
+  test$authorAttr[(i*50+1):(i*50+50)] <- test_authors[i+1]
+}
+
+```
+
+**Part Two - Building Models**
+
+Now, there are more than 9,000 variables in both training and testing set, which is almost impossible to be directly used to build and test the model. Therefore, we first carry out a principal components analysis to reduce the dimension of our dataset. Below is a graph of vairance of the training set being captured versus the number of dimension:
+
+```{r p5_4, echo = FALSE, message = FALSE, fig.align = 'center', fig.height = 2.5, fig.width = 3.5}
+train = train[, colSums(train != 0) > 0]
+PCApilot = prcomp(train[, -dim(train)[2]], scale = TRUE)
+
+PCApilot.var <- PCApilot$sdev ^ 2
+PCApilot.pvar <- PCApilot.var/sum(PCApilot.var)
+
+x <- seq(100, 2500, by = 100)
+y <- c(1:25)
+for (i in c(1:25)){
+  y[i] <- sum(PCApilot.pvar[1:x[i]])
+}
+
+ggplot(mapping = aes(x = x, y = y)) + geom_line() +
+  labs(x = "num PC", y = "variance captured")
+```
+As can be seen, even reducing the number of variables to 400, a still relatively large number, can only preserve 50% of the variability of the data. Therefore, for the purpose of this exercise, we choose to reduce the dimension to 150. While much variance might be lost, it is a less costly model and would be a more economic choice time-wise. One thing to note here is that, instead of projecting both training and testing set to a 150-dimensional PCA space at the same time, we need to project the training set first, and we will use the PCA space that the training set created to project the testing set.
+
+
+```{r p5_5, echo = FALSE, message = FALSE, warning = FALSE}
+train_pc150 = prcomp(train[, -dim(train)[2]], scale = TRUE, rank = 150)
+
+train150 = train_pc150$x
+test150 = predict(train_pc150, test[, -dim(test)[2]])
+
+train150 = as.data.frame(train150)
+test150 = as.data.frame(test150)
+
+# add back the author attribution column
+train150$author <- train$authorAttr
+test150$author <- test$authorAttr
+```
+
+In order to find a better-performing model, we will try out two methods to build the model: K-nearest neighbors, Random Forest. For KNN, different values of K will be tested, and for random forest, we will also try out different number of trees.
+
+*KNN with K = 1 to 30*
+```{r p5_6, echo = FALSE, message = FALSE, warning = FALSE, fig.align = 'center', fig.height = 2.5, fig.width = 3.5}
+set.seed(2222)
+library(class)
+library(kknn)
+
+kk = c(1:30)
+accuracy = c(1:30)
+for(i in kk){
+  model = knn(train = train150[, -151], test = test150[, -151], cl = train150[, 151], k = i)
+  pred <- as.data.frame(model)
+  pred <- cbind(pred, test150[, 151])
+  pred$correct <- ifelse(pred$model == pred$`test150[, 151]`, 1, 0)
+  accuracy[i] <- sum(pred$correct)/dim(pred)[1]
+}
+
+best = which.max(accuracy)
+ggplot(mapping = aes(x = kk, y = accuracy)) + geom_line()
+```
+Based on the above graph, we can tell that the optimal k is 6, and it gives an accuracy rate of:
+
+```{r p5_7, echo = FALSE, message = FALSE, warning = FALSE, fig.align = 'center', fig.height = 3, fig.width = 4}
+accuracy[best]
+```
+
+*Random Forest with num trees = 200, 500, 1000, 1200, 1500*
+
+```{r p5_8, echo = FALSE, message = FALSE, warning = FALSE, fig.align='center', fig.height = 2.5, fig.width = 3.5}
+library(randomForest)
+set.seed(2222)
+
+train150$author <- as.factor(c(train150$author))
+
+tree <- c(200, 500, 1000, 1200, 1500)
+accuracy <- c(1:length(tree))
+
+for (i in c(1:length(tree))){
+  model = randomForest(author ~., data = train150, ntree = tree[i], maxnodes = 15)
+  pred <- predict(model, test150)
+  pred <- as.data.frame(pred)
+  pred <- cbind(pred, test150[, 151])
+  pred$correct <- ifelse(pred$pred == pred$`test150[, 151]`, 1, 0)
+  accuracy[i] <- sum(pred$correct)/dim(pred)[1]
+}
+
+best = which.max(accuracy)
+ggplot(mapping = aes(x = tree, y = accuracy)) + geom_line()
+```
+The optimal number of trees for Random Forest is 1200, but it can only give us an accuracy rate of
+```{r p5_9, echo = FALSE, message = FALSE, warning = FALSE, fig.align = 'center', fig.height = 3, fig.width = 4}
+accuracy[best]
+```
+
+**Part Three - Conclusion**
+
+Based on the above analysis, we can see that the KNN is performing, on average, much better than the Random Forest model. The best model we have tested is KNN with K = 6. However, we can only achieve roughly 50% accuracy rate with the model. Possible reasons for this rather low number might be that reducing the dimensions of the original data set to a small number discards many of the variances. Had it not been the constraint in time, we could have tested out different PCAs, and it is possible that the KNN could perform better if we feed it with a higher-dimensional data. 
+
+
+\newpage
+
+# Association rule mining
+
+After reading in the data, we first do some exploratory analysis.
+
+The groceries.txt file recorded 9835 transactions and 169 unique grocery items. The top and bottom 10 most frequent items that people put in their shopping list are:
+
+```{r p6_1, echo = FALSE, message = FALSE, fig.show = "hold", out.width = "40%", fig.align = 'center'}
+library(tidyverse)
+library(arules)
+library(arulesViz)
+
+groceries <- read.delim("groceries.txt", header = FALSE)
+groceries$V1 <- str_split(groceries$V1, ",")
+groceries <- as.list(groceries$V1)
+
+groceries = lapply(groceries, unique)
+groceries_trans = as(groceries, "transactions")
+
+num_trans <- length(groceries_trans)
+num_items <- length(itemFrequency(groceries_trans))
+
+# store item_freq into a dataframe
+item_freq <- itemFrequency(groceries_trans)
+item_freq <- as.data.frame(sort(item_freq, decreasing = TRUE))
+colnames(item_freq) <- c("frequency")
+item_freq <- cbind(item = rownames(item_freq), item_freq)
+rownames(item_freq) <- 1:nrow(item_freq)
+item_freq$num_purchased <- item_freq$frequency * 9835
+
+# plot the top 10 most frequently bought items
+ggplot(data = item_freq[1:10,]) + 
+  geom_bar(mapping = aes(factor(item, levels = item), num_purchased), stat = "identity", width = 0.4) +
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  labs(x = "Item", y = "Num purchased", title = "Top 10 most frequently bought items") +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14))
+
+# plot the top 10 most frequenty bought items
+ggplot(data = item_freq[160:169,]) + 
+  geom_bar(mapping = aes(factor(item, levels = item), num_purchased), stat = "identity", width = 0.4) +
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  labs(x = "Item", y = "Num purchased", title = "10 least frequently bought items") +
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 14))
+```
+
+Based on the summary below, on average, people buy 3 or 4 items at a time. There is one case where a customer picked up 23 items. For the purpose of applying apriori algorithm to find the pattern, we will set the max length of a rule to be 3, as this is the median number of items that people will buy.
+
+
+```{r p6_2, echo = FALSE, message = FALSE, warning = FALSE}
+num_purchased <- count.fields("groceries.txt", sep = " ")
+summary(num_purchased)
+```
+
+In addition, we will set the minimum support of a rule to be 0.001, as salad dressing, the tenth least likely bought item, has roughly that level of support. And the minimum confidence for a rule will be set to 0.1.
+
+Below is a scatter plot for the 1582 rules we found with apriori algorithm. 
+
+```{r p6_3, echo = FALSE, message = FALSE, warning = FALSE, fig.align = 'center', fig.height = 3.5, fig.width = 5}
+shopping_rules = apriori(groceries_trans, 
+	parameter = list(support = .005, confidence = .1, maxlen = 5))
+
+plot(shopping_rules, measure = c("support", "lift"), shading = "confidence")
+```
+
+As we can tell from the graph, higher level of lifts are usually associated with lower level of support. To further inspect the rules we got, we will look at the result from two aspects, one sorted based on lift, and the other sorted based on confidence.
+
+First, we sort the rules by lift and below is the top 10 rules that have the highest lifts:
+
+```{r p6_4, echo = FALSE, message = FALSE, warning = FALSE, fig.align = 'center', fig.height = 3.5, fig.width = 5}
+inspect(sort(shopping_rules, by = "lift")[1:10])
+```
+
+The results are very easy to interpret and make much sense. All the item sets are common combinations of foods that people will eat together. For instance, the top two rules are "ham" -> "white bread" and "white bread" -> "ham", both with a lift of 4.639851. These are the most common ingredients for making a sandwich, which, of course, means that buying one will likely result in buying the other. The third rule has a length of three and a confidence of as high as 0.445. While the items in this set might not usually be eaten together, they are basic common foods that many people will choose to buy. Thus, it is also very easy to understand why an association rule is made among those items. And just as mentioned above, these rules with large lifts all have relatively small support.
+
+
+Next, we will look into the set of rules sorted based on confidence. Below are the top 10 rules with the highest confidence:
+
+```{r p6_5, echo = FALSE, message = FALSE, warning = FALSE, fig.align = 'center', fig.height = 3.5, fig.width = 5}
+inspect(sort(shopping_rules, by = "confidence")[1:10])
+```
+
+Interestingly, 9 out of the top 10 rules with highest confidence has "whole milk" on the rhs. This pattern is not hard to understand either. Our previous analysis shows that "whole milk" is the most commonly bought item; more than one fourth of the transactions involve "whole milk". Therefore, it can be an implication that "whole milk" is a common combination with a lot many other items. No matter what people buy, they are very likely to grab a bottle of milk to put in their basket too. The only rule that does not have "whole milk" on the rhs is rule number 8. Its rhs is "other vegetables", which is the second most frequently bought item in our list of transactions.
+
+
+
